@@ -1,10 +1,10 @@
 # ticket (forked)
 
-## This fork
+## This Fork
 
 This is my personal fork of Greg Wedow's [*ticket* (`tk`)](https://github.com/wedow/ticket), a CLI-based issue tracker for AI agents, where issues/tasks are called 'tickets'.
 
-There are several relatively popular CLIs for issue tracking that are designed specially for AI agents. In case you're new to the idea of -- basically, instead of using your agent's builtin `Todo*/Task*` tools for task management, you give it a CLI for creating and managing issues. The main advantages are that issues/tasks persist across sessions, can be kept under version control, and can be understood by different agent harnesses.
+There are several relatively popular CLIs for issue tracking that are designed specially for AI agents. In case you're new to the idea -- basically, instead of using your agent's builtin `Todo*/Task*` tools for task management, you give it a CLI for creating and managing issues. The main advantages are that issues/tasks persist across sessions, can be kept under version control, and can be understood by different agent harnesses.
 
 `tk` gets a lot right, as I argue in this [discussion thread](https://github.com/wedow/ticket/discussions/51).
 
@@ -14,7 +14,7 @@ There are several relatively popular CLIs for issue tracking that are designed s
 - Easy to extend with plugins. In fact, that's how I started out, until I noticed I needed a few changes in the core.
 - In my tests, Claude Code spent 86% fewer tokens on task management with `tk` than with the most-starred option, Steve Yegge's [*beads*](https://github.com/steveyegge/beads).
 
-## Differences with upstream
+## Differences with Upstream
 
 Check out the [changelog](./CHANGELOG.md)
 
@@ -23,6 +23,10 @@ Check out the [changelog](./CHANGELOG.md)
 - `close --reason rejected` to distinguish completed from rejected tickets
 - Fish shell completions
 
+## AI Notice
+
+This README is written manually by me. Changes are designed co-creatively with an AI agent. Tests and code are implemented by AI.
+
 ## "I want to use this too"
 
 I'm maintaining this fork for myself. With every change, I ask myself if I can't achieve the same result with a 'plugin' instead. That way, I hope to keep changes with respect to the upstream to a minimum, so that I can merge my changes in, but only after extensive dogfooding.
@@ -30,7 +34,6 @@ I'm maintaining this fork for myself. With every change, I ask myself if I can't
 ### Requirements
 
 `tk` is a portable bash script requiring only coreutils, so it works out of the box on any POSIX system with bash installed. The `query` command requires `jq`. Uses `rg` (ripgrep) if available, falls back to `grep`.
-
 
 ### Install
 
