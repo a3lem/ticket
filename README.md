@@ -1,45 +1,47 @@
-# ticket
+# ticket (forked)
 
-The git-backed issue tracker for AI agents. Rooted in the Unix Philosophy, `tk` is inspired by Joe Armstrong's [Minimal Viable Program](https://joearms.github.io/published/2014-06-25-minimal-viable-program.html) with additional quality of life features for managing and querying against complex issue dependency graphs.
+## This fork
 
-`tk` was written as a full replacement for [beads](https://github.com/steveyegge/beads). It shares many similar commands but without the need for keeping a SQLite file in sync or a rogue background daemon mangling your changes. It ships with a `migrate-beads` command to make this a smooth transition.
+This is my personal fork of Greg Wedow's [*ticket* (`tk`)](https://github.com/wedow/ticket), a CLI-based issue tracker for AI agents, where issues/tasks are called 'tickets'.
 
-Tickets are markdown files with YAML frontmatter in `.tickets/`. This allows AI agents to easily search them for relevant content without dumping ten thousand character JSONL lines into their context window.
+There are several relatively popular CLIs for issue tracking that are designed specially for AI agents. In case you're new to the idea of -- basically, instead of using your agent's builtin `Todo*/Task*` tools for task management, you give it a CLI for creating and managing issues. The main advantages are that issues/tasks persist across sessions, can be kept under version control, and can be understood by different agent harnesses.
 
-Using ticket IDs as file names also allows IDEs to quickly navigate to the ticket for you. For example, you might run `git log` in your terminal and see something like:
+`tk` gets a lot right, as I argue in this [discussion thread](https://github.com/wedow/ticket/discussions/51).
 
-```
-nw-5c46: add SSE connection management 
-```
+- Tickets are stored as plain markdown files with YAML fontmatter stored in `.tickets/` (similar to [*beans*](https://github.com/hmans/beans))
+- The core is simple. It's a single bash file with a lot of awk. My bash isn't great, not to speak of awk. But I can reason about how it works.
+- Every CLI feature is verified by one or more behavioral tests.
+- Easy to extend with plugins. In fact, that's how I started out, until I noticed I needed a few changes in the core.
+- In my tests, Claude Code spent 86% fewer tokens on task management with `tk` than with the most-starred option, Steve Yegge's [*beads*](https://github.com/steveyegge/beads).
 
-VS Code allows you to Ctrl+Click or Cmd+Click the ID and jump directly to the file to read the details.
+## Differences with upstream
 
-## Install
+Check out the [changelog](./CHANGELOG.md)
 
-**Homebrew (macOS/Linux):**
-```bash
-brew tap wedow/tools
-brew install ticket
-```
+## "I want to use this too"
 
-**Arch Linux (AUR):**
-```bash
-yay -S ticket  # or paru, etc.
-```
+I'm maintaining this fork for myself. With every change, I ask myself if I can't achieve the same result with a 'plugin' instead. That way, I hope to keep changes with respect to the upstream to a minimum, so that I can merge my changes in, but only after extensive dogfooding.
 
-**From source (auto-updates on git pull):**
-```bash
-git clone https://github.com/wedow/ticket.git
-cd ticket && ln -s "$PWD/ticket" ~/.local/bin/tk
-```
-
-**Or** just copy `ticket` to somewhere in your PATH.
-
-## Requirements
+### Requirements
 
 `tk` is a portable bash script requiring only coreutils, so it works out of the box on any POSIX system with bash installed. The `query` command requires `jq`. Uses `rg` (ripgrep) if available, falls back to `grep`.
 
-## Agent Setup
+
+### Install
+
+To install, just clone the repo and (assuming you've got [`just`](https://github.com/casey/just) installed) run `just install`.
+
+### Agent Setup
+
+#### Claude Code
+
+I use the *ticket* plugin in my [personal plugin marketplace](https://github.com/a3lem/my-claude-plugins/tree/main/plugins/ticket-cli). Used to be that it contributed a SKILL.md. Noticing that Claude sometimes ignores skills, I turned it into a rule that gets injected into the system prompt by a hook upon starting a session or after clearing it.
+
+#### Future
+
+On my backlog is a new `tk agent setup --claude` command, which will handle generating and installing skills/hooks into the project director.
+
+### Alternative
 
 Add this line to your `CLAUDE.md` or `AGENTS.md`:
 
@@ -49,7 +51,7 @@ This project uses a CLI ticket system for task management. Run `tk help` when yo
 
 Claude Opus picks it up naturally from there. Other models may need additional guidance.
 
-## Usage
+## CLI Reference
 
 ```bash
 tk - minimal ticket system with dependency tracking
@@ -95,6 +97,9 @@ Bundled plugins (ticket-extras):
 Searches parent directories for .tickets/ (override with TICKETS_DIR env var)
 Supports partial ID matching (e.g., 'tk show 5c4' matches 'nw-5c46')
 ```
+
+> [!NOTE]
+> Everything after this point is kept as-is from the upstream README
 
 ## Plugins
 
