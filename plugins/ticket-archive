@@ -1,0 +1,58 @@
+#!/usr/bin/env uv run python
+# tk-plugin: Move closed tickets to $TICKETS_DIR/archive directory (e.g. ./.tickets/archive)
+# tk-plugin-version: 1.0.0
+# tk-plugin-author: a3lem
+
+import glob
+import os
+import re
+import shutil
+import sys
+
+
+def get_status(path):
+    """Read the status field from a ticket's YAML frontmatter."""
+    with open(path) as f:
+        in_front = False
+        for line in f:
+            if line.strip() == "---":
+                if in_front:
+                    break
+                in_front = True
+                continue
+            if in_front:
+                m = re.match(r"^status\s*:\s*(.*)", line)
+                if m:
+                    return m.group(1).strip()
+    return None
+
+
+def main():
+    tickets_dir = os.environ.get("TICKETS_DIR", "")
+    if not tickets_dir or not os.path.isdir(tickets_dir):
+        print("Error: TICKETS_DIR not set or not a directory", file=sys.stderr)
+        sys.exit(1)
+
+    archive_dir = os.path.join(tickets_dir, "archive")
+
+    files = sorted(glob.glob(os.path.join(tickets_dir, "*.md")))
+    moved = []
+
+    for path in files:
+        if get_status(path) == "closed":
+            os.makedirs(archive_dir, exist_ok=True)
+            dest = os.path.join(archive_dir, os.path.basename(path))
+            shutil.move(path, dest)
+            ticket_id = os.path.basename(path).removesuffix(".md")
+            moved.append(ticket_id)
+
+    if moved:
+        for ticket_id in moved:
+            print(f"Archived {ticket_id}")
+        print(f"{len(moved)} ticket(s) archived")
+    else:
+        print("No closed tickets to archive")
+
+
+if __name__ == "__main__":
+    main()

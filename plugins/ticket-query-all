@@ -1,0 +1,93 @@
+#!/usr/bin/env uv run python
+# tk-plugin: Output tickets as JSON with all fields including title and body
+# tk-plugin-version: 1.0.0
+# tk-plugin-author: a3lem
+
+import glob
+import json
+import os
+import re
+import subprocess
+import sys
+
+
+def parse_yaml_value(val):
+    """Parse a YAML value into a Python object."""
+    val = val.strip()
+    if val.startswith("[") and val.endswith("]"):
+        inner = val[1:-1].strip()
+        if not inner:
+            return []
+        return [item.strip() for item in inner.split(",")]
+    try:
+        return int(val)
+    except ValueError:
+        return val
+
+
+def parse_ticket(path):
+    """Parse a ticket markdown file into a dict with all fields."""
+    with open(path) as f:
+        content = f.read()
+
+    # Split frontmatter from body
+    match = re.match(r"^---\n(.*?\n)---\n(.*)", content, re.DOTALL)
+    if not match:
+        return None
+
+    frontmatter_text = match.group(1)
+    body_text = match.group(2)
+
+    # Parse frontmatter
+    ticket = {}
+    for line in frontmatter_text.splitlines():
+        m = re.match(r"^([a-zA-Z][a-zA-Z0-9_-]*)\s*:\s*(.*)", line)
+        if m:
+            key = m.group(1)
+            ticket[key] = parse_yaml_value(m.group(2))
+
+    # Extract title from first # heading
+    title_match = re.match(r"#\s+(.*)", body_text.strip())
+    if title_match:
+        ticket["title"] = title_match.group(1).strip()
+        body_text = body_text.strip()[title_match.end() :]
+    else:
+        ticket["title"] = ""
+
+    ticket["body"] = body_text.strip()
+    return ticket
+
+
+def main():
+    tickets_dir = os.environ.get("TICKETS_DIR", "")
+    if not tickets_dir or not os.path.isdir(tickets_dir):
+        return
+
+    jq_filter = sys.argv[1] if len(sys.argv) > 1 else None
+
+    files = sorted(glob.glob(os.path.join(tickets_dir, "*.md")))
+    if not files:
+        return
+
+    lines = []
+    for path in files:
+        ticket = parse_ticket(path)
+        if ticket:
+            lines.append(json.dumps(ticket, ensure_ascii=False))
+
+    output = "\n".join(lines)
+
+    if jq_filter:
+        result = subprocess.run(
+            ["jq", "-c", f"select({jq_filter})"],
+            input=output,
+            capture_output=True,
+            text=True,
+        )
+        print(result.stdout, end="")
+    else:
+        print(output)
+
+
+if __name__ == "__main__":
+    main()

@@ -6,6 +6,9 @@ import tempfile
 from pathlib import Path
 
 
+TESTS_DIR = Path(__file__).parent.parent.resolve() / 'tests' / 'environment'
+
+
 def before_all(context):
     """Set up test environment before all tests."""
     # Store the project directory (where the ticket script lives)
@@ -21,6 +24,11 @@ def before_scenario(context, scenario):
     """Create a fresh temporary directory for each scenario."""
     # Create a temporary directory for this scenario
     context.test_dir = tempfile.mkdtemp(prefix='ticket_test_')
+
+    # Set up tickets_dir and env for plugin tests
+    context.tickets_dir = str(Path(context.test_dir) / '.tickets')
+    context.env = os.environ.copy()
+    context.env['TICKETS_DIR'] = context.tickets_dir
 
     # Initialize tracking
     context.tickets = {}

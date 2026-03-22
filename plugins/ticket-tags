@@ -1,0 +1,94 @@
+#!/usr/bin/env uv run python
+# tk-plugin: Count tags across tickets, sorted by frequency (descending)
+# tk-plugin-version: 1.0.0
+# tk-plugin-author: a3lem
+
+import argparse
+import glob
+import os
+import re
+import sys
+from collections import defaultdict
+
+MAX_IDS = 3
+
+
+def parse_frontmatter(path):
+    """Extract status, tags, and deps from a ticket's YAML frontmatter."""
+    status = None
+    tags = []
+    deps = []
+    with open(path) as f:
+        in_front = False
+        for line in f:
+            if line.strip() == "---":
+                if in_front:
+                    break
+                in_front = True
+                continue
+            if in_front:
+                m = re.match(r"^status\s*:\s*(.*)", line)
+                if m:
+                    status = m.group(1).strip()
+                m = re.match(r"^tags\s*:\s*\[(.*)\]", line)
+                if m:
+                    inner = m.group(1).strip()
+                    if inner:
+                        tags = [t.strip() for t in inner.split(",")]
+                m = re.match(r"^deps\s*:\s*\[(.*)\]", line)
+                if m:
+                    inner = m.group(1).strip()
+                    if inner:
+                        deps = [d.strip() for d in inner.split(",")]
+    return status, tags, deps
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--include-closed", action="store_true")
+    parser.add_argument("--include-archived", action="store_true")
+    args = parser.parse_args()
+
+    tickets_dir = os.environ.get("TICKETS_DIR", "")
+    if not tickets_dir or not os.path.isdir(tickets_dir):
+        print("Error: TICKETS_DIR not set or not a directory", file=sys.stderr)
+        sys.exit(1)
+
+    dirs = [tickets_dir]
+    if args.include_archived:
+        archive_dir = os.path.join(tickets_dir, "archive")
+        if os.path.isdir(archive_dir):
+            dirs.append(archive_dir)
+
+    allowed_statuses = {"open", "in_progress"}
+    if args.include_closed:
+        allowed_statuses.add("closed")
+
+    tag_tickets = defaultdict(list)
+    for d in dirs:
+        for path in glob.glob(os.path.join(d, "*.md")):
+            status, tags, deps = parse_frontmatter(path)
+            if status in allowed_statuses:
+                ticket_id = os.path.basename(path).removesuffix(".md")
+                for tag in tags:
+                    tag_tickets[tag].append((ticket_id, len(deps)))
+
+    if not tag_tickets:
+        return
+
+    # Sort tags by count descending
+    sorted_tags = sorted(tag_tickets.items(), key=lambda x: len(x[1]), reverse=True)
+
+    for tag, tickets in sorted_tags:
+        count = len(tickets)
+        # Sort by fewest deps first (most actionable)
+        tickets.sort(key=lambda t: t[1])
+        shown = [tid for tid, _ in tickets[:MAX_IDS]]
+        ids_str = ",".join(shown)
+        if count > MAX_IDS:
+            ids_str += ",..."
+        print(f"{tag} [{count}] - {ids_str}")
+
+
+if __name__ == "__main__":
+    main()

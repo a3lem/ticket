@@ -604,20 +604,20 @@ def step_jsonl_has_field(context, field):
             break
 
 
-@then(r'the JSONL deps field should be a JSON array')
-def step_jsonl_deps_is_array(context):
-    """Assert deps field in JSONL is an array."""
+@then(r'the JSONL (?P<field>\w+) field should be a JSON array')
+def step_jsonl_field_is_array(context, field):
+    """Assert a field in JSONL is an array."""
     lines = context.stdout.strip().split('\n')
     assert lines, "No JSONL output"
 
     for line in lines:
         if line.strip():
             data = json.loads(line)
-            if 'deps' in data:
-                assert isinstance(data['deps'], list), \
-                    f"deps field is not an array: {type(data['deps'])}"
+            if field in data:
+                assert isinstance(data[field], list), \
+                    f"'{field}' field is not an array: {type(data[field])}"
                 return
-    raise AssertionError("No JSONL line with deps field found")
+    raise AssertionError(f"No JSONL line with '{field}' field found")
 
 
 @then(r'the dep tree output should have (?P<first_id>[^\s]+) before (?P<second_id>[^\s]+)')
@@ -762,3 +762,196 @@ exec "$TK_SCRIPT" super create "$@"
 def step_run_with_plugins(context, command):
     """Run a command with plugins in PATH."""
     run_with_plugin_path(context, command)
+
+
+# ============================================================================
+# Plugin Command Steps (ticket-tags, ticket-archive, ticket-query-all)
+# ============================================================================
+
+def run_plugin(context, args):
+    """Run a plugin command and store results in context."""
+    result = subprocess.run(
+        args,
+        capture_output=True,
+        text=True,
+        env=context.env,
+    )
+    context.result = result
+    context.stdout = result.stdout.strip()
+    context.stderr = result.stderr.strip()
+    context.returncode = result.returncode
+
+
+# --- Given steps for test fixture tickets ---
+
+@given(r'the test tickets directory')
+def step_test_tickets_dir(context):
+    """Copy test fixture tickets into the scenario's tickets directory."""
+    from features.environment import TESTS_DIR
+    src = TESTS_DIR / '.tickets'
+    import shutil
+    shutil.copytree(str(src), context.tickets_dir)
+
+
+@given(r'an empty tickets directory')
+def step_empty_tickets_dir(context):
+    """Create an empty tickets directory."""
+    import shutil
+    if os.path.exists(context.tickets_dir):
+        shutil.rmtree(context.tickets_dir)
+    os.makedirs(context.tickets_dir)
+
+
+@given(r'ticket "(?P<ticket_id>[^"]+)" is archived')
+def step_archive_ticket(context, ticket_id):
+    """Move a ticket to the archive subdirectory."""
+    import shutil
+    archive_dir = os.path.join(context.tickets_dir, 'archive')
+    os.makedirs(archive_dir, exist_ok=True)
+    src = os.path.join(context.tickets_dir, f'{ticket_id}.md')
+    dest = os.path.join(archive_dir, f'{ticket_id}.md')
+    shutil.move(src, dest)
+
+
+# --- When steps for plugin commands ---
+
+@when(r'I run ticket-query-all')
+def step_run_query_all(context):
+    run_plugin(context, ['ticket-query-all'])
+
+
+@when(r"I run ticket-query-all with filter '(?P<filter>[^']+)'")
+def step_run_query_all_filter(context, filter):
+    run_plugin(context, ['ticket-query-all', filter])
+
+
+@when(r'I run ticket-tags')
+def step_run_tags(context):
+    run_plugin(context, ['ticket-tags'])
+
+
+@when(r'I run ticket-tags with (?P<args>.+)')
+def step_run_tags_with_args(context, args):
+    run_plugin(context, ['ticket-tags'] + args.split())
+
+
+@when(r'I run ticket-archive')
+def step_run_archive(context):
+    run_plugin(context, ['ticket-archive'])
+
+
+# --- Then steps for JSONL validation ---
+
+@then(r'every JSONL line should have field "(?P<field>[^"]+)"')
+def step_every_jsonl_has_field(context, field):
+    lines = [l for l in context.stdout.strip().splitlines() if l.strip()]
+    for i, line in enumerate(lines):
+        obj = json.loads(line)
+        assert field in obj, f"Line {i + 1} missing field '{field}': {line}"
+
+
+@then(r'the JSONL output should contain a title "(?P<title>[^"]+)"')
+def step_jsonl_contains_title(context, title):
+    lines = [l for l in context.stdout.strip().splitlines() if l.strip()]
+    titles = [json.loads(l)['title'] for l in lines]
+    assert title in titles, f"Title '{title}' not found. Titles: {titles}"
+
+
+@then(r'the JSONL output for ticket "(?P<ticket_id>[^"]+)" should have body containing "(?P<text>[^"]+)"')
+def step_jsonl_body_contains(context, ticket_id, text):
+    lines = [l for l in context.stdout.strip().splitlines() if l.strip()]
+    for line in lines:
+        obj = json.loads(line)
+        if obj['id'] == ticket_id:
+            assert text in obj['body'], \
+                f"Body of {ticket_id} does not contain '{text}': {obj['body']!r}"
+            return
+    raise AssertionError(f"Ticket {ticket_id} not found in output")
+
+
+@then(r'the JSONL output for ticket "(?P<ticket_id>[^"]+)" should have empty body')
+def step_jsonl_body_empty(context, ticket_id):
+    lines = [l for l in context.stdout.strip().splitlines() if l.strip()]
+    for line in lines:
+        obj = json.loads(line)
+        if obj['id'] == ticket_id:
+            assert obj['body'] == '', \
+                f"Body of {ticket_id} is {obj['body']!r}, expected empty string"
+            return
+    raise AssertionError(f"Ticket {ticket_id} not found in output")
+
+
+@then(r'the JSONL (?P<field>\w+) field should be a number')
+def step_jsonl_field_is_number(context, field):
+    lines = [l for l in context.stdout.strip().splitlines() if l.strip()]
+    for i, line in enumerate(lines):
+        obj = json.loads(line)
+        assert isinstance(obj[field], (int, float)), \
+            f"Line {i + 1}: '{field}' is {type(obj[field]).__name__}, expected number"
+
+
+# --- Then steps for tag output ---
+
+@then(r'the first output line should start with "(?P<text>[^"]+)"')
+def step_first_line_starts_with(context, text):
+    first = context.stdout.strip().splitlines()[0]
+    assert first.startswith(text), f"First line is {first!r}, expected to start with {text!r}"
+
+
+@then(r'the output line for tag "(?P<tag>[^"]+)" should list "(?P<id1>[^"]+)" before "(?P<id2>[^"]+)"')
+def step_tag_line_order(context, tag, id1, id2):
+    for line in context.stdout.strip().splitlines():
+        if line.startswith(f'{tag} '):
+            pos1 = line.index(id1)
+            pos2 = line.index(id2)
+            assert pos1 < pos2, f"Expected {id1} before {id2} in: {line!r}"
+            return
+    raise AssertionError(f"No output line for tag {tag!r}")
+
+
+# --- Then steps for archive ---
+
+def _archive_dir(context):
+    return os.path.join(context.tickets_dir, 'archive')
+
+
+@then(r'ticket "(?P<ticket_id>[^"]+)" should exist in the archive')
+def step_ticket_in_archive(context, ticket_id):
+    path = os.path.join(_archive_dir(context), f'{ticket_id}.md')
+    assert os.path.exists(path), f"Expected {path} to exist"
+
+
+@then(r'ticket "(?P<ticket_id>[^"]+)" should not exist in the archive')
+def step_ticket_not_in_archive(context, ticket_id):
+    path = os.path.join(_archive_dir(context), f'{ticket_id}.md')
+    assert not os.path.exists(path), f"Expected {path} to not exist"
+
+
+@then(r'ticket "(?P<ticket_id>[^"]+)" should exist in the tickets directory')
+def step_ticket_in_tickets_dir(context, ticket_id):
+    path = os.path.join(context.tickets_dir, f'{ticket_id}.md')
+    assert os.path.exists(path), f"Expected {path} to exist"
+
+
+@then(r'ticket "(?P<ticket_id>[^"]+)" should not exist in the tickets directory')
+def step_ticket_not_in_tickets_dir(context, ticket_id):
+    path = os.path.join(context.tickets_dir, f'{ticket_id}.md')
+    assert not os.path.exists(path), f"Expected {path} to not exist"
+
+
+@then(r'the archive directory should exist')
+def step_archive_dir_exists(context):
+    assert os.path.isdir(_archive_dir(context)), "Archive directory does not exist"
+
+
+@then(r'the archive directory should not exist')
+def step_archive_dir_not_exists(context):
+    assert not os.path.exists(_archive_dir(context)), "Archive directory should not exist"
+
+
+@then(r'the archived ticket "(?P<ticket_id>[^"]+)" should contain "(?P<text>[^"]+)"')
+def step_archived_ticket_contains(context, ticket_id, text):
+    path = os.path.join(_archive_dir(context), f'{ticket_id}.md')
+    with open(path) as f:
+        content = f.read()
+    assert text in content, f"Archived ticket does not contain '{text}':\n{content}"

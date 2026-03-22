@@ -7,3 +7,6 @@ install:
         ln -sf "$plugin" ~/.local/bin/$(basename "$plugin"); \
     done
     @echo "Installed tk + plugins to ~/.local/bin"
+
+test:
+	uv run --with behave behave
