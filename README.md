@@ -18,6 +18,11 @@ There are several relatively popular CLIs for issue tracking that are designed s
 
 Check out the [changelog](./CHANGELOG.md)
 
+### Highlights
+
+- `close --reason rejected` to distinguish completed from rejected tickets
+- Fish shell completions
+
 ## "I want to use this too"
 
 I'm maintaining this fork for myself. With every change, I ask myself if I can't achieve the same result with a 'plugin' instead. That way, I hope to keep changes with respect to the upstream to a minimum, so that I can merge my changes in, but only after extensive dogfooding.
