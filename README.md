@@ -68,8 +68,8 @@ Commands:
     --parent               Parent ticket ID
     --tags                 Comma-separated tags (e.g., --tags ui,backend,urgent)
   start <id>               Set status to in_progress
-  close <id>               Set status to closed
-  reopen <id>              Set status to open
+  close <id> [--reason R]   Close ticket (reason: completed|rejected) [default: completed]
+  reopen <id>              Reopen ticket (clears close reason)
   status <id> <status>     Update status (open|in_progress|closed)
   dep <id> <dep-id>        Add dependency (id depends on dep-id)
   dep tree [--full] <id>   Show dependency tree (--full disables dedup)
@@ -80,7 +80,8 @@ Commands:
   ls|list [--status=X] [-a X] [-T X]   List tickets
   ready [-a X] [-T X]      List open/in-progress tickets with deps resolved
   blocked [-a X] [-T X]    List open/in-progress tickets with unresolved deps
-  closed [--limit=N] [-a X] [-T X] List recently closed tickets (default 20, by mtime)
+  closed [--limit=N] [-a X] [-T X] [--completed] [--rejected]
+                           List recently closed tickets (default 20, by mtime)
   show <id>                Display ticket
   add-note <id> [text]     Append timestamped note (or pipe via stdin)
   super <cmd> [args]       Bypass plugins, run built-in command directly

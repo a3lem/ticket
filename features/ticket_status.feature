@@ -35,8 +35,27 @@ Feature: Ticket Status Management
   Scenario: Close command sets status to closed
     When I run "ticket close test-0001"
     Then the command should succeed
-    And the output should be "Updated test-0001 -> closed"
+    And the output should be "Closed test-0001 (completed)"
     And ticket "test-0001" should have field "status" with value "closed"
+    And ticket "test-0001" should have field "close_reason" with value "completed"
+
+  Scenario: Close with explicit rejected reason
+    When I run "ticket close --reason rejected test-0001"
+    Then the command should succeed
+    And the output should be "Closed test-0001 (rejected)"
+    And ticket "test-0001" should have field "status" with value "closed"
+    And ticket "test-0001" should have field "close_reason" with value "rejected"
+
+  Scenario: Close with explicit completed reason
+    When I run "ticket close --reason completed test-0001"
+    Then the command should succeed
+    And the output should be "Closed test-0001 (completed)"
+    And ticket "test-0001" should have field "close_reason" with value "completed"
+
+  Scenario: Close with invalid reason
+    When I run "ticket close --reason wontfix test-0001"
+    Then the command should fail
+    And the output should contain "invalid close reason"
 
   Scenario: Reopen command sets status to open
     Given ticket "test-0001" has status "closed"
@@ -44,6 +63,12 @@ Feature: Ticket Status Management
     Then the command should succeed
     And the output should be "Updated test-0001 -> open"
     And ticket "test-0001" should have field "status" with value "open"
+
+  Scenario: Reopen clears close_reason
+    When I run "ticket close test-0001"
+    And I run "ticket reopen test-0001"
+    Then ticket "test-0001" should have field "status" with value "open"
+    And ticket "test-0001" should not have field "close_reason"
 
   Scenario: Invalid status value
     When I run "ticket status test-0001 invalid"

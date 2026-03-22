@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # tk-plugin: List tickets with optional filters
-# tk-plugin-version: 1.0.0
+# tk-plugin-version: 1.1.0
 set -euo pipefail
 
-status_filter="" assignee_filter="" tag_filter=""
+status_filter="" assignee_filter="" tag_filter="" reason_filter=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --status=closed:*) status_filter="closed"; reason_filter="${1#--status=closed:}"; shift ;;
         --status=*) status_filter="${1#--status=}"; shift ;;
         -a) assignee_filter="$2"; shift 2 ;;
         --assignee=*) assignee_filter="${1#--assignee=}"; shift ;;
@@ -15,11 +16,11 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-awk -v status_filter="$status_filter" -v assignee_filter="$assignee_filter" -v tag_filter="$tag_filter" '
+awk -v status_filter="$status_filter" -v assignee_filter="$assignee_filter" -v tag_filter="$tag_filter" -v reason_filter="$reason_filter" '
 BEGIN { FS=": "; in_front=0 }
 FNR==1 {
     if (prev_file) emit()
-    id=""; status=""; title=""; deps=""; assignee=""; tags=""; in_front=0
+    id=""; status=""; title=""; deps=""; assignee=""; tags=""; close_reason=""; in_front=0
     prev_file=FILENAME
 }
 /^---$/ { in_front = !in_front; next }
@@ -27,6 +28,7 @@ in_front && /^id:/ { id = $2 }
 in_front && /^status:/ { status = $2 }
 in_front && /^assignee:/ { assignee = $2 }
 in_front && /^tags:/ { tags = $2; gsub(/[\[\] ]/, "", tags) }
+in_front && /^close_reason:/ { close_reason = $2 }
 in_front && /^deps:/ {
     deps = $2
     gsub(/[\[\] ]/, "", deps)
@@ -38,12 +40,22 @@ function has_tag(tags_str, tag,    i, n, arr) {
     for (i = 1; i <= n; i++) if (arr[i] == tag) return 1
     return 0
 }
-function emit() {
-    if (id != "" && (status_filter == "" || status == status_filter) && (assignee_filter == "" || assignee == assignee_filter) && (tag_filter == "" || has_tag(tags, tag_filter))) {
-        deps_display = (deps != "") ? "[" deps "]" : "[]"
-        gsub(/,/, ", ", deps_display)
-        dep_str = (deps_display != "[]") ? " <- " deps_display : ""
-        printf "%-8s [%s] - %s%s\n", id, status, title, dep_str
+function emit(    display_status, display_reason) {
+    if (id == "") return
+    if (status_filter != "" && status != status_filter) return
+    if (assignee_filter != "" && assignee != assignee_filter) return
+    if (tag_filter != "" && !has_tag(tags, tag_filter)) return
+    if (status == "closed" || status == "done") {
+        display_reason = (close_reason != "") ? close_reason : "completed"
+        if (reason_filter != "" && display_reason != reason_filter) return
+        display_status = display_reason
+    } else {
+        if (reason_filter != "") return
+        display_status = status
     }
+    deps_display = (deps != "") ? "[" deps "]" : "[]"
+    gsub(/,/, ", ", deps_display)
+    dep_str = (deps_display != "[]") ? " <- " deps_display : ""
+    printf "%-8s [%s] - %s%s\n", id, display_status, title, dep_str
 }
 ' "$TICKETS_DIR"/*.md 2>/dev/null

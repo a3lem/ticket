@@ -108,6 +108,19 @@ def step_ticket_has_status(context, ticket_id, status):
     ticket_path.write_text(content)
 
 
+@given(r'ticket "(?P<ticket_id>[^"]+)" has close_reason "(?P<reason>[^"]+)"')
+def step_ticket_has_close_reason(context, ticket_id, reason):
+    """Set ticket close_reason."""
+    ticket_path = Path(context.test_dir) / '.tickets' / f'{ticket_id}.md'
+    content = ticket_path.read_text()
+    if re.search(r'^close_reason:', content, re.MULTILINE):
+        content = re.sub(r'^close_reason: \w+', f'close_reason: {reason}', content, flags=re.MULTILINE)
+    else:
+        # Insert before closing ---
+        content = content.replace('---\n#', f'close_reason: {reason}\n---\n#', 1)
+    ticket_path.write_text(content)
+
+
 @given(r'ticket "(?P<ticket_id>[^"]+)" depends on "(?P<dep_id>[^"]+)"')
 def step_ticket_depends_on(context, ticket_id, dep_id):
     """Add dependency to ticket."""
@@ -467,6 +480,16 @@ def step_ticket_has_field_value(context, ticket_id, field, value):
     assert match, f"Field '{field}' not found in ticket\nContent: {content}"
     actual = match.group(1).strip()
     assert actual == value, f"Field '{field}' has value '{actual}', expected '{value}'"
+
+
+@then(r'ticket "(?P<ticket_id>[^"]+)" should not have field "(?P<field>[^"]+)"')
+def step_ticket_not_has_field(context, ticket_id, field):
+    """Assert ticket does not have a field (or field is empty)."""
+    ticket_path = Path(context.test_dir) / '.tickets' / f'{ticket_id}.md'
+    content = ticket_path.read_text()
+    pattern = rf'^{re.escape(field)}:\s*(.+)$'
+    match = re.search(pattern, content, re.MULTILINE)
+    assert not match, f"Field '{field}' found with value '{match.group(1).strip()}', expected it to be absent"
 
 
 @then(r'ticket "(?P<ticket_id>[^"]+)" should have "(?P<dep_id>[^"]+)" in deps')

@@ -154,6 +154,12 @@ ${field}: ${value}
     fi
 }
 
+remove_yaml_field() {
+    local file="$1"
+    local field="$2"
+    _sed_i "$file" "/^${field}:.*$/d"
+}
+
 cmd_create() {
     ensure_dir
 
@@ -273,11 +279,38 @@ cmd_start() {
 }
 
 cmd_close() {
-    if [[ $# -lt 1 ]]; then
-        echo "Usage: $(basename "$0") close <id>" >&2
+    local reason="completed" id=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --reason) reason="$2"; shift 2 ;;
+            --reason=*) reason="${1#--reason=}"; shift ;;
+            *) id="$1"; shift ;;
+        esac
+    done
+
+    if [[ -z "$id" ]]; then
+        echo "Usage: $(basename "$0") close [--reason completed|rejected] <id>" >&2
         return 1
     fi
-    cmd_status "$1" "closed"
+
+    if [[ "$reason" != "completed" && "$reason" != "rejected" ]]; then
+        echo "Error: invalid close reason '$reason' (valid: completed, rejected)" >&2
+        return 1
+    fi
+
+    local file
+    file=$(ticket_path "$id") || return 1
+
+    update_yaml_field "$file" "status" "closed"
+    # Insert or update close_reason in frontmatter
+    if _grep -q "^close_reason:" "$file"; then
+        _sed_i "$file" "s/^close_reason:.*$/close_reason: ${reason}/"
+    else
+        # Insert before closing --- of frontmatter
+        local tmp="${file}.tmp.$$"
+        awk -v reason="$reason" 'BEGIN{n=0} /^---$/{n++; if(n==2) print "close_reason: " reason} {print}' "$file" > "$tmp" && mv "$tmp" "$file"
+    fi
+    echo "Closed $(basename "$file" .md) ($reason)"
 }
 
 cmd_reopen() {
@@ -285,7 +318,13 @@ cmd_reopen() {
         echo "Usage: $(basename "$0") reopen <id>" >&2
         return 1
     fi
-    cmd_status "$1" "open"
+
+    local file
+    file=$(ticket_path "$1") || return 1
+
+    update_yaml_field "$file" "status" "open"
+    remove_yaml_field "$file" "close_reason"
+    echo "Updated $(basename "$file" .md) -> open"
 }
 
 cmd_dep_tree() {
@@ -741,7 +780,7 @@ cmd_ready() {
 }
 
 cmd_closed() {
-    local limit=20 assignee_filter="" tag_filter=""
+    local limit=20 assignee_filter="" tag_filter="" reason_filter=""
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --limit=*) limit="${1#--limit=}"; shift ;;
@@ -749,6 +788,8 @@ cmd_closed() {
             --assignee=*) assignee_filter="${1#--assignee=}"; shift ;;
             -T) tag_filter="$2"; shift 2 ;;
             --tag=*) tag_filter="${1#--tag=}"; shift ;;
+            --rejected) reason_filter="rejected"; shift ;;
+            --completed) reason_filter="completed"; shift ;;
             *) shift ;;
         esac
     done
@@ -757,11 +798,11 @@ cmd_closed() {
     local files
     files=$(ls -t "$TICKETS_DIR"/*.md 2>/dev/null | head -n 100)
     [[ -z "$files" ]] && return 0
-    echo "$files" | xargs awk -v assignee_filter="$assignee_filter" -v tag_filter="$tag_filter" '
+    echo "$files" | xargs awk -v assignee_filter="$assignee_filter" -v tag_filter="$tag_filter" -v reason_filter="$reason_filter" '
     BEGIN { FS=": "; in_front=0 }
     FNR==1 {
         if (prev_file) emit()
-        id=""; status=""; title=""; assignee=""; tags=""; in_front=0
+        id=""; status=""; title=""; assignee=""; tags=""; close_reason=""; in_front=0
         prev_file=FILENAME
     }
     /^---$/ { in_front = !in_front; next }
@@ -769,16 +810,20 @@ cmd_closed() {
     in_front && /^status:/ { status = $2 }
     in_front && /^assignee:/ { assignee = $2 }
     in_front && /^tags:/ { tags = $2; gsub(/[\[\] ]/, "", tags) }
+    in_front && /^close_reason:/ { close_reason = $2 }
     !in_front && /^# / && title == "" { title = substr($0, 3) }
     function has_tag(tags_str, tag,    i, n, arr) {
         n = split(tags_str, arr, ",")
         for (i = 1; i <= n; i++) if (arr[i] == tag) return 1
         return 0
     }
-    function emit() {
-        if (id != "" && (status == "closed" || status == "done") && (assignee_filter == "" || assignee == assignee_filter) && (tag_filter == "" || has_tag(tags, tag_filter))) {
-            output[++count] = sprintf("%-8s [%s] - %s", id, status, title)
-        }
+    function emit(    display_reason) {
+        if (id == "" || (status != "closed" && status != "done")) return
+        if (assignee_filter != "" && assignee != assignee_filter) return
+        if (tag_filter != "" && !has_tag(tags, tag_filter)) return
+        display_reason = (close_reason != "") ? close_reason : "completed"
+        if (reason_filter != "" && display_reason != reason_filter) return
+        output[++count] = sprintf("%-8s [%s] - %s", id, display_reason, title)
     }
     END {
         if (prev_file) emit()
@@ -1310,8 +1355,8 @@ Commands:
     --parent               Parent ticket ID
     --tags                 Comma-separated tags (e.g., --tags ui,backend,urgent)
   start <id>               Set status to in_progress
-  close <id>               Set status to closed
-  reopen <id>              Set status to open
+  close <id> [--reason R]   Close ticket (reason: completed|rejected) [default: completed]
+  reopen <id>              Reopen ticket (clears close reason)
   status <id> <status>     Update status (open|in_progress|closed)
   dep <id> <dep-id>        Add dependency (id depends on dep-id)
   dep tree [--full] <id>   Show dependency tree (--full disables dedup)
@@ -1321,7 +1366,8 @@ Commands:
   unlink <id> <target-id>  Remove link between tickets
   ready [-a X] [-T X]      List open/in-progress tickets with deps resolved
   blocked [-a X] [-T X]    List open/in-progress tickets with unresolved deps
-  closed [--limit=N] [-a X] [-T X] List recently closed tickets (default 20, by mtime)
+  closed [--limit=N] [-a X] [-T X] [--completed] [--rejected]
+                           List recently closed tickets (default 20, by mtime)
   show <id>                Display ticket
   add-note <id> [text]     Append timestamped note (or pipe via stdin)
   super <cmd> [args]       Bypass plugins, run built-in command directly

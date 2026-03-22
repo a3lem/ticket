@@ -26,6 +26,34 @@ Feature: Ticket Listing
     Then the command should succeed
     And the output should match pattern "list-0001\s+\[open\]\s+-\s+My ticket"
 
+  Scenario: List shows close reason for closed tickets
+    Given a ticket exists with ID "list-0001" and title "Done ticket"
+    And ticket "list-0001" has status "closed"
+    And ticket "list-0001" has close_reason "rejected"
+    When I run "ticket ls"
+    Then the command should succeed
+    And the output should contain "[rejected]"
+    And the output should not contain "[closed]"
+
+  Scenario: List shows completed for closed tickets without close_reason
+    Given a ticket exists with ID "list-0001" and title "Done ticket"
+    And ticket "list-0001" has status "closed"
+    When I run "ticket ls"
+    Then the command should succeed
+    And the output should contain "[completed]"
+
+  Scenario: List filters by closed:rejected
+    Given a ticket exists with ID "list-0001" and title "Completed ticket"
+    And a ticket exists with ID "list-0002" and title "Rejected ticket"
+    And ticket "list-0001" has status "closed"
+    And ticket "list-0001" has close_reason "completed"
+    And ticket "list-0002" has status "closed"
+    And ticket "list-0002" has close_reason "rejected"
+    When I run "ticket ls --status=closed:rejected"
+    Then the command should succeed
+    And the output should contain "list-0002"
+    And the output should not contain "list-0001"
+
   Scenario: List with status filter
     Given a ticket exists with ID "list-0001" and title "Open ticket"
     And a ticket exists with ID "list-0002" and title "Closed ticket"
@@ -144,8 +172,40 @@ Feature: Ticket Listing
     When I run "ticket closed"
     Then the command should succeed
     And the output should contain "done-0001"
-    And the output should contain "[closed]"
+    And the output should contain "[completed]"
     And the output should contain "Done ticket"
+
+  Scenario: Closed shows close reason in display
+    Given a ticket exists with ID "done-0001" and title "Done ticket"
+    And ticket "done-0001" has status "closed"
+    And ticket "done-0001" has close_reason "rejected"
+    When I run "ticket closed"
+    Then the command should succeed
+    And the output should contain "[rejected]"
+
+  Scenario: Closed --rejected filters to rejected only
+    Given a ticket exists with ID "done-0001" and title "Completed ticket"
+    And a ticket exists with ID "done-0002" and title "Rejected ticket"
+    And ticket "done-0001" has status "closed"
+    And ticket "done-0001" has close_reason "completed"
+    And ticket "done-0002" has status "closed"
+    And ticket "done-0002" has close_reason "rejected"
+    When I run "ticket closed --rejected"
+    Then the command should succeed
+    And the output should contain "done-0002"
+    And the output should not contain "done-0001"
+
+  Scenario: Closed --completed filters to completed only
+    Given a ticket exists with ID "done-0001" and title "Completed ticket"
+    And a ticket exists with ID "done-0002" and title "Rejected ticket"
+    And ticket "done-0001" has status "closed"
+    And ticket "done-0001" has close_reason "completed"
+    And ticket "done-0002" has status "closed"
+    And ticket "done-0002" has close_reason "rejected"
+    When I run "ticket closed --completed"
+    Then the command should succeed
+    And the output should contain "done-0001"
+    And the output should not contain "done-0002"
 
   Scenario: Closed respects limit
     Given a ticket exists with ID "done-0001" and title "First done"
