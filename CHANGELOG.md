@@ -9,3 +9,8 @@
 - `ticket-list` plugin supports `--status=closed:rejected` and `--status=closed:completed` filters
 - Closed tickets display `[completed]` or `[rejected]` instead of `[closed]` in listings
 - ticket-list 1.1.0: close_reason display and filtering
+
+## 2026-03-11
+
+### Added
+- Fish shell completions for all commands and flags
