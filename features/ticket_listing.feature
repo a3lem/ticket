@@ -24,23 +24,22 @@ Feature: Ticket Listing
     Given a ticket exists with ID "list-0001" and title "My ticket"
     When I run "ticket ls"
     Then the command should succeed
-    And the output should match pattern "list-0001\s+\[open\]\s+-\s+My ticket"
+    And the output should match pattern "list-0001 - \[ \] My ticket"
 
-  Scenario: List shows close reason for closed tickets
+  Scenario: List shows rejected checkbox for closed rejected tickets
     Given a ticket exists with ID "list-0001" and title "Done ticket"
     And ticket "list-0001" has status "closed"
     And ticket "list-0001" has close_reason "rejected"
     When I run "ticket ls"
     Then the command should succeed
-    And the output should contain "[rejected]"
-    And the output should not contain "[closed]"
+    And the output should contain "[~]"
 
-  Scenario: List shows completed for closed tickets without close_reason
+  Scenario: List shows completed checkbox for closed tickets without close_reason
     Given a ticket exists with ID "list-0001" and title "Done ticket"
     And ticket "list-0001" has status "closed"
     When I run "ticket ls"
     Then the command should succeed
-    And the output should contain "[completed]"
+    And the output should contain "[x]"
 
   Scenario: List filters by closed:rejected
     Given a ticket exists with ID "list-0001" and title "Completed ticket"
@@ -115,7 +114,7 @@ Feature: Ticket Listing
     Given a ticket exists with ID "ready-001" and title "Priority ticket"
     When I run "ticket ready"
     Then the command should succeed
-    And the output should match pattern "ready-001\s+\[P2\]\[open\]\s+-\s+Priority ticket"
+    And the output should match pattern "ready-001 - \[ \] Priority ticket"
 
   Scenario: Ready sorts by priority then ID
     Given a ticket exists with ID "ready-003" and title "Low priority" with priority 3
@@ -172,16 +171,16 @@ Feature: Ticket Listing
     When I run "ticket closed"
     Then the command should succeed
     And the output should contain "done-0001"
-    And the output should contain "[completed]"
+    And the output should contain "[x]"
     And the output should contain "Done ticket"
 
-  Scenario: Closed shows close reason in display
+  Scenario: Closed shows rejected checkbox
     Given a ticket exists with ID "done-0001" and title "Done ticket"
     And ticket "done-0001" has status "closed"
     And ticket "done-0001" has close_reason "rejected"
     When I run "ticket closed"
     Then the command should succeed
-    And the output should contain "[rejected]"
+    And the output should contain "[~]"
 
   Scenario: Closed --rejected filters to rejected only
     Given a ticket exists with ID "done-0001" and title "Completed ticket"
@@ -221,3 +220,85 @@ Feature: Ticket Listing
     When I run "ticket closed"
     Then the command should succeed
     And the output should not contain "done-0001"
+
+  # === Hierarchical listing (tree rendering) ===
+
+  Scenario: List shows parent with children indented
+    Given a ticket exists with ID "tree-0001" and title "Epic ticket"
+    And a ticket exists with ID "tree-0002" and title "Child one" with parent "tree-0001"
+    And a ticket exists with ID "tree-0003" and title "Child two" with parent "tree-0001"
+    When I run "ticket ls"
+    Then the command should succeed
+    And the output line 1 should contain "tree-0001"
+    And the output line 1 should contain "Epic ticket"
+    And the output line 2 should contain "tree-0002"
+    And the output line 3 should contain "tree-0003"
+    And the output should match pattern "[├└]── tree-0002"
+    And the output should match pattern "[├└]── tree-0003"
+
+  Scenario: List shows orphan tickets at root level
+    Given a ticket exists with ID "tree-0001" and title "Standalone ticket"
+    When I run "ticket ls"
+    Then the command should succeed
+    And the output should match pattern "^tree-0001"
+
+  Scenario: List shows nested children with deeper indentation
+    Given a ticket exists with ID "tree-0001" and title "Epic ticket"
+    And a ticket exists with ID "tree-0002" and title "Feature ticket" with parent "tree-0001"
+    And a ticket exists with ID "tree-0003" and title "Task ticket" with parent "tree-0002"
+    When I run "ticket ls"
+    Then the command should succeed
+    And the output should match pattern "^tree-0001"
+    And the output should match pattern "[├└]── tree-0002"
+    And the output should match pattern "[├└]── tree-0003"
+
+  Scenario: List --flat disables tree rendering
+    Given a ticket exists with ID "tree-0001" and title "Epic ticket"
+    And a ticket exists with ID "tree-0002" and title "Child ticket" with parent "tree-0001"
+    When I run "ticket ls --flat"
+    Then the command should succeed
+    And the output should contain "tree-0001"
+    And the output should contain "tree-0002"
+    And the output should not match pattern "  tree-0002"
+
+  Scenario: Ready shows tree with parent as context heading
+    Given a ticket exists with ID "tree-0001" and title "Epic ticket"
+    And ticket "tree-0001" has status "in_progress"
+    And a ticket exists with ID "tree-0002" and title "Ready child" with parent "tree-0001"
+    And a ticket exists with ID "tree-0003" and title "Blocked child" with parent "tree-0001"
+    And a ticket exists with ID "tree-0004" and title "Blocker ticket"
+    And ticket "tree-0003" depends on "tree-0004"
+    When I run "ticket ready"
+    Then the command should succeed
+    And the output should contain "tree-0001"
+    And the output should contain "tree-0002"
+    And the output should match pattern "[├└]── tree-0002"
+    And the output should not contain "tree-0003"
+
+  Scenario: Blocked shows tree with parent as context heading
+    Given a ticket exists with ID "tree-0001" and title "Epic ticket"
+    And a ticket exists with ID "tree-0002" and title "Blocked child" with parent "tree-0001"
+    And a ticket exists with ID "tree-0003" and title "Blocker ticket"
+    And ticket "tree-0002" depends on "tree-0003"
+    When I run "ticket blocked"
+    Then the command should succeed
+    And the output should contain "tree-0001"
+    And the output should match pattern "[├└]── tree-0002"
+    And the output should contain "<- [tree-0003]"
+
+  Scenario: Parent not shown when all children filtered out
+    Given a ticket exists with ID "tree-0001" and title "Epic ticket"
+    And a ticket exists with ID "tree-0002" and title "Ready child" with parent "tree-0001"
+    When I run "ticket blocked"
+    Then the command should succeed
+    And the output should not contain "tree-0001"
+    And the output should not contain "tree-0002"
+
+  Scenario: Ready --flat disables tree rendering
+    Given a ticket exists with ID "tree-0001" and title "Epic ticket"
+    And a ticket exists with ID "tree-0002" and title "Ready child" with parent "tree-0001"
+    When I run "ticket ready --flat"
+    Then the command should succeed
+    And the output should contain "tree-0001"
+    And the output should contain "tree-0002"
+    And the output should not match pattern "  tree-0002"

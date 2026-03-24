@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # tk-plugin: List tickets with optional filters
-# tk-plugin-version: 1.1.0
+# tk-plugin-version: 1.3.0
 set -euo pipefail
 
-status_filter="" assignee_filter="" tag_filter="" reason_filter=""
+status_filter="" assignee_filter="" tag_filter="" reason_filter="" flat=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --status=closed:*) status_filter="closed"; reason_filter="${1#--status=closed:}"; shift ;;
@@ -12,15 +12,16 @@ while [[ $# -gt 0 ]]; do
         --assignee=*) assignee_filter="${1#--assignee=}"; shift ;;
         -T) tag_filter="$2"; shift 2 ;;
         --tag=*) tag_filter="${1#--tag=}"; shift ;;
+        --flat) flat=1; shift ;;
         *) shift ;;
     esac
 done
 
-awk -v status_filter="$status_filter" -v assignee_filter="$assignee_filter" -v tag_filter="$tag_filter" -v reason_filter="$reason_filter" '
+awk -v status_filter="$status_filter" -v assignee_filter="$assignee_filter" -v tag_filter="$tag_filter" -v reason_filter="$reason_filter" -v flat="$flat" '
 BEGIN { FS=": "; in_front=0 }
 FNR==1 {
-    if (prev_file) emit()
-    id=""; status=""; title=""; deps=""; assignee=""; tags=""; close_reason=""; in_front=0
+    if (prev_file) store()
+    id=""; status=""; title=""; deps=""; assignee=""; tags=""; close_reason=""; parent=""; priority=""; issue_type=""; in_front=0
     prev_file=FILENAME
 }
 /^---$/ { in_front = !in_front; next }
@@ -29,33 +30,122 @@ in_front && /^status:/ { status = $2 }
 in_front && /^assignee:/ { assignee = $2 }
 in_front && /^tags:/ { tags = $2; gsub(/[\[\] ]/, "", tags) }
 in_front && /^close_reason:/ { close_reason = $2 }
+in_front && /^parent:/ { parent = $2 }
+in_front && /^priority:/ { priority = $2 }
+in_front && /^type:/ { issue_type = $2 }
 in_front && /^deps:/ {
     deps = $2
     gsub(/[\[\] ]/, "", deps)
 }
 !in_front && /^# / && title == "" { title = substr($0, 3) }
-END { if (prev_file) emit() }
 function has_tag(tags_str, tag,    i, n, arr) {
     n = split(tags_str, arr, ",")
     for (i = 1; i <= n; i++) if (arr[i] == tag) return 1
     return 0
 }
-function emit(    display_status, display_reason) {
+function store(    display_status, display_reason) {
     if (id == "") return
+    all_ids[id] = 1
+    statuses[id] = status
+    titles[id] = title
+    deps_raw[id] = deps
+    assignees[id] = assignee
+    all_tags[id] = tags
+    close_reasons[id] = close_reason
+    parent_of[id] = parent
+    priorities[id] = (priority != "") ? priority : 2
+    types[id] = (issue_type != "") ? issue_type : "task"
+
+    # Check if this ticket passes filters
     if (status_filter != "" && status != status_filter) return
     if (assignee_filter != "" && assignee != assignee_filter) return
     if (tag_filter != "" && !has_tag(tags, tag_filter)) return
     if (status == "closed" || status == "done") {
         display_reason = (close_reason != "") ? close_reason : "completed"
         if (reason_filter != "" && display_reason != reason_filter) return
-        display_status = display_reason
     } else {
         if (reason_filter != "") return
-        display_status = status
     }
-    deps_display = (deps != "") ? "[" deps "]" : "[]"
+    matched[id] = 1
+}
+function status_checkbox(id,    s, reason) {
+    s = statuses[id]
+    if (s == "in_progress") return "[/]"
+    if (s == "closed" || s == "done") {
+        reason = (close_reasons[id] != "") ? close_reasons[id] : "completed"
+        if (reason == "rejected") return "[~]"
+        return "[x]"
+    }
+    return "[ ]"
+}
+function format_line(id,    deps_display, dep_str, meta, prio_str, type_str) {
+    deps_display = (deps_raw[id] != "") ? "[" deps_raw[id] "]" : "[]"
     gsub(/,/, ", ", deps_display)
     dep_str = (deps_display != "[]") ? " <- " deps_display : ""
-    printf "%-8s [%s] - %s%s\n", id, display_status, title, dep_str
+    type_str = (types[id] != "task") ? "[" types[id] "]" : ""
+    prio_str = (priorities[id] != 2) ? "[P" priorities[id] "]" : ""
+    meta = type_str ((type_str != "" && prio_str != "") ? " " : "") prio_str
+    if (meta != "") meta = " " meta
+    return sprintf("%s%s - %s %s%s", id, meta, status_checkbox(id), titles[id], dep_str)
+}
+function sort_ids(arr, n,    i, j, tmp) {
+    for (i = 1; i <= n; i++)
+        for (j = i + 1; j <= n; j++)
+            if (arr[i] > arr[j]) {
+                tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp
+            }
+}
+function print_tree(id, depth, prefix, connector,    i, nc, clist, new_prefix) {
+    printf "%s%s%s\n", prefix, connector, format_line(id)
+    nc = 0
+    for (i = 1; i <= child_count[id]; i++)
+        clist[++nc] = children[id, i]
+    if (nc > 0) {
+        sort_ids(clist, nc)
+        if (connector == "\342\224\224\342\224\200\342\224\200 ") new_prefix = prefix "    "
+        else if (connector == "\342\224\234\342\224\200\342\224\200 ") new_prefix = prefix "\342\224\202   "
+        else new_prefix = prefix
+        for (i = 1; i <= nc; i++)
+            print_tree(clist[i], depth + 1, new_prefix, (i == nc) ? "\342\224\224\342\224\200\342\224\200 " : "\342\224\234\342\224\200\342\224\200 ")
+    }
+}
+END {
+    if (prev_file) store()
+
+    if (flat) {
+        # Flat output: sort matched by ID and print
+        for (id in matched)
+            sorted[++sc] = id
+        sort_ids(sorted, sc)
+        for (i = 1; i <= sc; i++)
+            print format_line(sorted[i])
+    } else {
+        # Mark ancestors of matched tickets as visible
+        for (id in matched) {
+            visible[id] = 1
+            cur = id
+            while (parent_of[cur] != "" && parent_of[cur] in all_ids) {
+                visible[parent_of[cur]] = 1
+                cur = parent_of[cur]
+            }
+        }
+
+        # Build children adjacency list from visible tickets
+        for (id in visible) {
+            p = parent_of[id]
+            if (p != "" && p in visible) {
+                child_count[p]++
+                children[p, child_count[p]] = id
+            } else {
+                root_count++
+                roots[root_count] = id
+            }
+        }
+
+        # Sort and print tree from roots
+        sort_ids(roots, root_count)
+        for (i = 1; i <= root_count; i++)
+            print_tree(roots[i], 0, "", "")
+    }
 }
 ' "$TICKETS_DIR"/*.md 2>/dev/null

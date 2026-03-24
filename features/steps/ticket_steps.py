@@ -399,6 +399,13 @@ def step_output_matches_pattern(context, pattern):
         f"Output does not match pattern '{pattern}'\nActual output: {context.stdout}"
 
 
+@then(r'the output should not match pattern "(?P<pattern>[^"]+)"')
+def step_output_not_matches_pattern(context, pattern):
+    """Assert output does not match regex pattern."""
+    assert not re.search(pattern, context.stdout), \
+        f"Output unexpectedly matches pattern '{pattern}'\nActual output: {context.stdout}"
+
+
 @then(r'the output should match box-drawing tree format')
 def step_output_matches_tree_format(context):
     """Assert output contains box-drawing characters for tree."""

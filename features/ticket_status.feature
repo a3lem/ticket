@@ -85,3 +85,48 @@ Feature: Ticket Status Management
     When I run "ticket status 0001 in_progress"
     Then the command should succeed
     And ticket "test-0001" should have field "status" with value "in_progress"
+
+  Scenario: Cannot close parent with open child
+    Given a ticket exists with ID "par-0001" and title "Parent epic"
+    And a ticket exists with ID "par-0002" and title "Child task" with parent "par-0001"
+    When I run "ticket close par-0001"
+    Then the command should fail
+    And the output should contain "has open descendants"
+    And the output should contain "par-0002"
+    And ticket "par-0001" should have field "status" with value "open"
+
+  Scenario: Cannot close parent via status command with open child
+    Given a ticket exists with ID "par-0001" and title "Parent epic"
+    And a ticket exists with ID "par-0002" and title "Child task" with parent "par-0001"
+    When I run "ticket status par-0001 closed"
+    Then the command should fail
+    And the output should contain "has open descendants"
+
+  Scenario: Can close parent when all children are closed
+    Given a ticket exists with ID "par-0001" and title "Parent epic"
+    And a ticket exists with ID "par-0002" and title "Child task" with parent "par-0001"
+    And ticket "par-0002" has status "closed"
+    When I run "ticket close par-0001"
+    Then the command should succeed
+    And the output should be "Closed par-0001 (completed)"
+
+  Scenario: Can close parent when child is rejected
+    Given a ticket exists with ID "par-0001" and title "Parent epic"
+    And a ticket exists with ID "par-0002" and title "Child task" with parent "par-0001"
+    When I run "ticket close --reason rejected par-0002"
+    And I run "ticket close par-0001"
+    Then the command should succeed
+
+  Scenario: Cannot close grandparent with open grandchild
+    Given a ticket exists with ID "par-0001" and title "Epic"
+    And a ticket exists with ID "par-0002" and title "Feature" with parent "par-0001"
+    And a ticket exists with ID "par-0003" and title "Task" with parent "par-0002"
+    And ticket "par-0002" has status "closed"
+    When I run "ticket close par-0001"
+    Then the command should fail
+    And the output should contain "has open descendants"
+    And the output should contain "par-0003"
+
+  Scenario: Can close ticket with no children
+    When I run "ticket close test-0001"
+    Then the command should succeed
